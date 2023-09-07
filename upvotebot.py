@@ -18,10 +18,18 @@ client = commands.Bot(command_prefix="!", intents=intents)
 
 # Load saved channel IDs from a JSON file
 try:
-    with open('channel_ids.json', 'r') as f:
+    with open('channel_settings.json', 'r') as f:
         forum_channel_ids = json.load(f)
 except FileNotFoundError:
     forum_channel_ids = {}
+
+# Load saved emojis from JSON file
+try:
+    with open('emoji_settings.json', 'r') as f:
+        emoji_settings = json.load(f)
+except FileNotFoundError:
+    emoji_settings = {}
+
 
 @client.command()
 async def setchannel(ctx, channel_id_str: str):
@@ -48,10 +56,27 @@ async def setchannel(ctx, channel_id_str: str):
 
     # Save the channel ID for this guild
     forum_channel_ids[guild_id] = channel.id
-    with open('channel_ids.json', 'w') as f:
+    with open('channel_settings.json', 'w') as f:
         json.dump(forum_channel_ids, f)
 
     await ctx.send(f"Channel has been set to {channel.name} for this server.")
+
+@client.command()
+async def setupvote(ctx, emoji: str):
+    guild_id = str(ctx.guild.id)
+    
+    # Only allow Unicode emojis
+    if re.match(r"<a?:[a-zA-Z0-9\_]+:(\d+)>", emoji):
+        await ctx.send("Only Unicode emojis are allowed.")
+        return
+
+    # Save the emoji for this guild
+    emoji_settings[guild_id] = emoji
+    with open('emoji_settings.json', 'w') as f:
+        json.dump(emoji_settings, f)
+    await ctx.send(f"Reaction emoji has been set to {emoji} for this server.")
+
+
 
 async def fetch_leaderboard(channel):
     leaderboard = {}
@@ -60,7 +85,7 @@ async def fetch_leaderboard(channel):
     messages = []
     
     if isinstance(channel, discord.TextChannel):
-        async for message in channel.history(limit=200):  # You can set any limit you prefer
+        async for message in channel.history(limit=200):
             messages.append(message)
     elif isinstance(channel, discord.ForumChannel):
         for thread in channel.threads:
@@ -74,16 +99,23 @@ async def fetch_leaderboard(channel):
         if twitch_clip_match:
             twitch_clip_url = twitch_clip_match.group(1)
             stars_count = 0  
+            guild_id = str(channel.guild.id)
+            reaction_emoji = emoji_settings.get(guild_id, '⭐')
+            
             for reaction in message.reactions:
-                if reaction.emoji == '⭐':
-                    stars_count = reaction.count
-                    break
-            headline = message.channel.name if isinstance(channel, discord.TextChannel) else message.channel.parent.name
+                # Only consider Unicode emoji
+                if isinstance(reaction.emoji, str):
+                    if reaction.emoji == reaction_emoji:
+                        stars_count = reaction.count
+                        break
+            
             if twitch_clip_url in leaderboard:
-                existing_headline, existing_stars = leaderboard[twitch_clip_url]
+                existing_stars = leaderboard[twitch_clip_url]
                 stars_count += existing_stars
-            leaderboard[twitch_clip_url] = (headline, stars_count)
+            leaderboard[twitch_clip_url] = stars_count
+    
     return leaderboard
+
 
 
 @client.command()
@@ -101,31 +133,66 @@ async def top10(ctx):
         return
 
     leaderboard = await fetch_leaderboard(forum_channel)
-    sorted_leaderboard = sorted(leaderboard.items(), key=lambda x: x[1][1], reverse=True)[:10]
+    sorted_leaderboard = sorted(leaderboard.items(), key=lambda x: x[1], reverse=True)[:10]
 
     output = "Top 10 Clips:\n"
-    for i, (clip, (headline, stars)) in enumerate(sorted_leaderboard, start=1):
-        star_word = "stars" if stars != 1 else "star"
-        output += f"{i}. {stars} {star_word} - <{clip}>\n"
+    count = 0
+    for clip, stars in sorted_leaderboard:
+        if stars >= 1:  # Only include clips with at least 1 star
+            count += 1
+            star_word = "upvotes" if stars != 1 else "upvote"
+            output += f"{count}. {stars} {star_word} - <{clip}>\n"
+            if count >= 10:  # Stop once 10 clips have been added
+                break
 
-    await ctx.send(output)  # This sends the top 10 clips to wherever the command was run
+    if count == 0:  # If there are no clips with at least 1 star
+        await ctx.send("No clips have at least 1 upvote.")
+    else:
+        await ctx.send(output)  # This sends the top 10 clips to wherever the command was run
 
+@client.command()
+async def whatchannel(ctx):
+    guild_id = str(ctx.guild.id)
+    channel_id = forum_channel_ids.get(guild_id, None)
+    if channel_id:
+        channel = client.get_channel(channel_id)
+        if channel:
+            await ctx.send(f"The current channel is set to {channel.name}.")
+        else:
+            await ctx.send(f"Channel ID exists but no such channel was found.")
+    else:
+        await ctx.send("No channel is set for this server.")
 
-@tasks.loop(minutes=1)
-async def update_every_x_minutes():
-    for guild_id, channel_id in forum_channel_ids.items():
-        forum_channel = client.get_channel(channel_id)
-        if forum_channel:
-            leaderboard = await fetch_leaderboard(forum_channel)
+@client.command()
+async def whatupvote(ctx):
+    guild_id = str(ctx.guild.id)
+    emoji = emoji_settings.get(guild_id, None)
+    if emoji:
+        await ctx.send(f"The current upvote emoji is set to {emoji}.")
+    else:
+        await ctx.send("No upvote emoji is set for this server.")
 
-@update_every_x_minutes.before_loop
-async def before():
-    await client.wait_until_ready()
+async def set_defaults(guild):
+    general_channel = discord.utils.get(guild.text_channels, name='general')
+    if general_channel:
+        forum_channel_ids[str(guild.id)] = general_channel.id
+    emoji_settings[str(guild.id)] = "⭐"
 
 @client.event
 async def on_ready():
     print(f'We have logged in as {client.user}')
-    update_every_x_minutes.start()
+    for guild in client.guilds:
+        guild_id_str = str(guild.id)
+        if guild_id_str not in forum_channel_ids:
+            general_channel = discord.utils.get(guild.text_channels, name='general')
+            if general_channel:
+                forum_channel_ids[guild_id_str] = general_channel.id
+                with open('channel_ids.json', 'w') as f:
+                    json.dump(forum_channel_ids, f)
+        if guild_id_str not in emoji_settings:
+            emoji_settings[guild_id_str] = "⭐"
+            with open('emoji_settings.json', 'w') as f:
+                    json.dump(emoji_settings, f)
 
 
 client.run(os.getenv('BOT_TOKEN'))  # Read bot token from environment variables

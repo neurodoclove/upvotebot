@@ -1,8 +1,15 @@
-# upvotebot
+# upvotebot #
 Discord bot that uses emojis to generate a top 10 list of the most 'upvoted' clips in a channel
 
-Setup is simple.  After inviting the bot to the server, decide which channel you'd like the bot to watch.  Then run !setchannel #channel-name to set the channel.  
+## Setup ##
 
-To see a top 10 list run !top10.  
+1. Invite the bot to the server
+2. Decide which channel you'd like the bot to watch then run !setchannel #channel-name
+3. Decide what emote you'd like to use as an upvote (Note: only unicode emotes permitted), then run !setupvote nameofemoji
 
-Want a different emoji?  Just replace the 'star' with whatever you like in the code. 
+## Commands ##
+!top10 - See top 10 most upvoted clips in the channel
+!setchannel - Set the channel the upvote bot should watch
+!setupvote - Set the emoji you'd like to use as an upvote (unicode emotes only)
+!whatchannel - Print the channel currently being watched by upvote bot
+!whatupvote - Print the emoji currently being used as the upvote
