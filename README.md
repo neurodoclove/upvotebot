@@ -12,4 +12,4 @@ Discord bot that uses emojis to generate a top 10 list of the most 'upvoted' cli
 !setchannel - Set the channel the upvote bot should watch  
 !setupvote - Set the emoji you'd like to use as an upvote (unicode emotes only)  
 !whatchannel - Print the channel currently being watched by upvote bot  
-!whatupvote - Print the emoji currently being used as the upvote  
+!whatupvote - Print the emoji currently being used as the upvote  # big20code
